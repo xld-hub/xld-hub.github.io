@@ -1,0 +1,758 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101116">
+<meta name="description" content="可自定义阶数的 3D 魔方，支持一键打乱和手动复原。">
+<title>魔方练习室</title>
+<style>
+:root {
+  color-scheme: dark;
+  font-family: "Inter", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  background: #101116;
+  color: #f2f2f5;
+  --surface: #181a22;
+  --border: #2a2d38;
+  --muted: #a0a4b3;
+  --accent: #f9ae7d;
+  --mono: "IBM Plex Mono", "Cascadia Code", ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 280px; }
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+button, input, select { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, input:focus-visible, select:focus-visible, canvas:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+button:disabled { cursor: default; opacity: .42; }
+button, select, input { transition: background-color .16s, border-color .16s, color .16s; }
+[hidden] { display: none !important; }
+.icon { width: 18px; height: 18px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
+.symbols { position: absolute; width: 0; height: 0; overflow: hidden; }
+.site-header { border-bottom: 1px solid #262832; }
+.header-inner, main { width: min(1220px, calc(100% - 80px)); margin: auto; }
+.header-inner { height: 73px; display: flex; align-items: center; justify-content: space-between; }
+.brand { display: flex; align-items: center; gap: 11px; font-weight: 750; letter-spacing: .12em; }
+.brand-mark { width: 34px; height: 34px; display: grid; place-items: center; color: var(--accent); background: #30241f; border: 1px solid #593a2e; border-radius: 9px; }
+.brand-mark .icon { width: 21px; height: 21px; stroke-width: 1.45; }
+button { color: inherit; background: #1e2029; border: 1px solid #343744; border-radius: 8px; }
+button:hover:not(:disabled) { background: #2a2d38; border-color: #505464; }
+.icon-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 11px; min-height: 36px; white-space: nowrap; font-size: 13px; }
+.help-button { color: #c6c8d1; background: transparent; border-color: transparent; }
+main { padding: 31px 0 32px; }
+.title-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 24px; }
+h1 { font-size: clamp(27px, 3.6vw, 42px); letter-spacing: -.045em; line-height: 1.22; margin: 0; font-weight: 780; }
+.primary { display: inline-flex; align-items: center; justify-content: center; gap: 9px; background: var(--accent); color: #281a14; border-color: #f9b186; font-size: 14px; font-weight: 760; border-radius: 9px; min-height: 44px; padding: 0 16px; white-space: nowrap; box-shadow: 0 3px 14px #f9ae7d19; }
+.primary:hover:not(:disabled) { background: #ffc39e; border-color: #ffc39e; }
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) 324px; align-items: stretch; gap: 18px; }
+.stage { position: relative; min-width: 0; min-height: 598px; overflow: hidden; isolation: isolate; border: 1px solid #303444; border-radius: 15px;
+  background: radial-gradient(ellipse at 48% 41%, #2c2d49 0, #202235 37%, #171922 74%);
+}
+.stage::before { content: ""; position: absolute; inset: 0; z-index: -2; pointer-events: none; background-image: radial-gradient(#9ba0c24a .75px, transparent .9px); background-size: 22px 22px; mask-image: radial-gradient(ellipse at 48% 43%, #000 9%, #0008 66%, transparent 96%); }
+.floor { position: absolute; z-index: -1; pointer-events: none; inset: auto -25% -25% -25%; height: 72%; transform: perspective(285px) rotateX(54deg); background: repeating-linear-gradient(90deg, #8487b240 0 1px, transparent 1px 39px), repeating-linear-gradient(#8487b240 0 1px, transparent 1px 39px); mask-image: radial-gradient(ellipse, #000 3%, #0008 45%, transparent 73%); }
+.stage-head, .stage-foot { position: absolute; left: 0; right: 0; z-index: 1; display: flex; justify-content: space-between; align-items: center; gap: 9px; padding: 15px 17px; pointer-events: none; }
+.stage-head { top: 0; }
+.stage-foot { bottom: 0; background: linear-gradient(transparent, #141620bd); padding-top: 21px; }
+.stage-actions { display: flex; gap: 6px; }
+.stage-actions button { pointer-events: auto; background: #1c1e2ac9; }
+.stage-actions button:hover:not(:disabled) { background: #303346; }
+.pill { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 10px; color: #c8cad6; background: #161823d9; border: 1px solid #424657; border-radius: 7px; white-space: nowrap; font-size: 12px; }
+.dimension { font: 600 12px var(--mono); letter-spacing: .06em; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #8d91a5; }
+.status[data-state="ready"] .status-dot, .status[data-state="playing"] .status-dot { background: #f9ae7d; box-shadow: 0 0 9px #f9ae7d75; }
+.status[data-state="solved"] .status-dot { background: #68ddad; box-shadow: 0 0 9px #68ddad85; }
+.stage-tip { display: flex; align-items: center; gap: 7px; color: #b5b8c9; font-size: 12px; }
+.stage-tip .icon { width: 15px; height: 15px; }
+canvas { display: block; width: 100%; height: 100%; position: absolute; inset: 0; touch-action: none; cursor: grab; }
+canvas:focus-visible { outline-offset: -5px; }
+canvas[data-drag="view"] { cursor: grabbing; }
+canvas[data-hover="sticker"] { cursor: move; }
+canvas[data-drag="turn"] { cursor: grabbing; }
+.panels { display: grid; gap: 13px; align-content: stretch; grid-template-rows: auto 1fr auto; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 13px; padding: 17px; min-width: 0; }
+.card h2 { margin: 0; font-size: 15px; font-weight: 720; letter-spacing: .035em; }
+.card-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 13px; }
+.range { color: var(--muted); font: 12px var(--mono); }
+.size-controls { display: grid; grid-template-columns: 40px 1fr 40px; gap: 8px; }
+.stepper { height: 39px; display: grid; place-items: center; }
+.size-input { width: 100%; color: #f6f6f8; background: #11131a; border: 1px solid #383b48; border-radius: 8px; text-align: center; font: 600 18px var(--mono); appearance: textfield; -moz-appearance: textfield; }
+.size-input::-webkit-inner-spin-button, .size-input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 10px; }
+.preset { min-height: 33px; font: 12px var(--mono); color: #b7bac8; white-space: nowrap; }
+.preset[aria-pressed="true"] { background: #372922; border-color: #8c583e; color: #ffc299; }
+.turns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.face { min-height: 55px; padding: 7px 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.face-key { font: 650 17px var(--mono); line-height: 1.1; color: var(--face); }
+.face-name { font-size: 11px; color: #babdcb; }
+.turn-options { margin-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr) 1fr; gap: 7px; }
+.layer-option { display: flex; align-items: center; gap: 5px; color: #c5c8d4; white-space: nowrap; font-size: 12px; }
+.layer-option select { color: #f1f1f5; border: 1px solid #383b48; border-radius: 6px; background: #11131a; min-height: 34px; width: 100%; padding: 0 6px; font-size: 12px; }
+.reverse { min-height: 34px; padding: 0 5px; font-size: 12px; color: #c5c8d4; white-space: nowrap; }
+.reverse[aria-pressed="true"] { background: #372922; border-color: #8c583e; color: #ffc299; }
+.card-note { color: var(--muted); font-size: 11px; line-height: 1.5; margin: 9px 0 0; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.stat { min-width: 0; padding: 10px 12px; border: 1px solid #2b2e39; border-radius: 8px; background: #13151c; }
+.stat-label { color: #b1b4c2; font-size: 12px; }
+.stat-value { display: block; font: 550 23px/1.2 var(--mono); color: #f3f3f6; margin-top: 3px; letter-spacing: -.04em; }
+.hint { min-height: 36px; margin: 9px 0 0; padding: 0 5px; text-align: center; color: #b0b3c1; font-size: 12px; }
+.hint:hover:not(:disabled) { color: #f4f4f7; }
+.reset-button { width: 100%; }
+dialog { width: min(440px, calc(100% - 32px)); background: #1b1d27; border: 1px solid #3c4050; border-radius: 14px; padding: 22px; color: #f4f4f7; box-shadow: 0 20px 80px #0009; }
+dialog::backdrop { background: #0b0b10b8; }
+dialog h2 { margin: 0; font-size: 21px; }
+.dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+dialog ul { padding-left: 1.4em; color: #c7c9d5; margin: 16px 0 0; font-size: 14px; line-height: 1.7; }
+dialog li + li { margin-top: 7px; }
+kbd { font: 12px var(--mono); padding: 2px 4px; border: 1px solid #494c5b; border-radius: 4px; background: #11131a; color: #e7e7ed; white-space: nowrap; }
+@media (max-width: 1050px) {
+  .header-inner, main { width: calc(100% - 48px); }
+  .workspace { grid-template-columns: minmax(0, 1fr) 294px; }
+  .card { padding: 14px; }
+}
+@media (max-width: 770px) {
+  .header-inner, main { width: calc(100% - 28px); }
+  .header-inner { height: 56px; }
+  main { padding-top: 20px; }
+  .title-row { margin-bottom: 15px; }
+  .workspace { grid-template-columns: 1fr; gap: 12px; }
+  .stage { min-height: clamp(335px, 80vw, 500px); }
+  .panels { grid-template-columns: 1fr 1fr; grid-template-rows: auto; gap: 10px; }
+  .turn-card { grid-row: span 2; }
+}
+@media (max-width: 475px) {
+  .panels { grid-template-columns: 1fr; }
+  .turn-card { grid-row: auto; }
+  .stage-head, .stage-foot { padding: 10px; }
+  .stage-foot { align-items: flex-end; }
+  .stage-tip { max-width: 124px; gap: 4px; line-height: 1.4; font-size: 11px; }
+  .stage-actions { gap: 4px; }
+  .stage-actions .icon-button { padding: 0 7px; min-height: 32px; font-size: 11px; gap: 4px; }
+  .stage-actions .icon { width: 14px; height: 14px; }
+  .primary { padding: 0 10px; min-height: 39px; font-size: 13px; }
+}
+</style>
+</head>
+<body>
+<svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <symbol id="i-cube" viewBox="0 0 24 24"><path d="m12 2.7 8.4 4.7v9.3L12 21.4l-8.4-4.7V7.4L12 2.7Z M3.6 7.4l8.4 4.8 8.4-4.8 M12 12.2v9.2 M7.8 5l8.4 4.8v9.3 M3.6 12.1l8.4 4.7 8.4-4.7 M16.2 5 7.8 9.8v9.3"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.3 9a2.7 2.7 0 0 1 5.4 0c0 2-2.7 2.3-2.7 4 M12 16.8h.01"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M3 7h3c5 0 7 10 12 10h3 M17 13l4 4-4 4 M3 17h3c5 0 7-10 12-10h3 M17 3l4 4-4 4"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="m8 5-5 5 5 5 M3 10h11a5 5 0 1 1 0 10h-3"/></symbol>
+  <symbol id="i-view" viewBox="0 0 24 24"><path d="M8 4H4v4 M16 4h4v4 M4 16v4h4 M20 16v4h-4 M12 8v8 M8 12h8"/></symbol>
+  <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 3v18 M3 12h18 M9 6l3-3 3 3 M18 9l3 3-3 3 M15 18l-3 3-3-3 M6 15l-3-3 3-3"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14 M12 5v14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12 M18 6 6 18"/></symbol>
+</svg>
+<header class="site-header">
+  <div class="header-inner">
+    <div class="brand"><span class="brand-mark"><svg class="icon" aria-hidden="true"><use href="#i-cube"/></svg></span><span>方寸</span></div>
+    <button class="icon-button help-button" id="help" type="button"><svg class="icon" aria-hidden="true"><use href="#i-help"/></svg>玩法</button>
+  </div>
+</header>
+<main>
+  <div class="title-row">
+    <h1>魔方练习室</h1>
+    <button class="primary" id="shuffle" type="button"><svg class="icon" aria-hidden="true"><use href="#i-shuffle"/></svg>一键打乱</button>
+  </div>
+  <div class="workspace">
+    <section class="stage" aria-label="3D 魔方">
+      <div class="floor"></div>
+      <canvas id="cube" tabindex="0" aria-label="3D 魔方。拖动色块转层，拖动空白旋转视角，也可用方向键旋转视角。" aria-describedby="stage-tip">请使用支持 Canvas 的浏览器查看 3D 魔方。</canvas>
+      <div class="stage-head">
+        <span class="pill dimension" id="dimension">3 × 3 × 3</span>
+        <span class="pill status" id="status" data-state="idle" role="status"><span class="status-dot"></span><span id="status-text">待打乱</span></span>
+      </div>
+      <div class="stage-foot">
+        <span class="stage-tip" id="stage-tip"><svg class="icon" aria-hidden="true"><use href="#i-move"/></svg>拖动色块转层 · 拖动空白换视角</span>
+        <div class="stage-actions">
+          <button class="icon-button" id="undo" type="button" disabled><svg class="icon" aria-hidden="true"><use href="#i-undo"/></svg>撤销</button>
+          <button class="icon-button" id="view" type="button"><svg class="icon" aria-hidden="true"><use href="#i-view"/></svg>重置视角</button>
+        </div>
+      </div>
+    </section>
+    <aside class="panels" aria-label="魔方操作">
+      <section class="card" aria-labelledby="size-heading">
+        <div class="card-heading"><h2 id="size-heading">阶数</h2><span class="range">2–12</span></div>
+        <div class="size-controls">
+          <button class="stepper" id="smaller" type="button" aria-label="减少阶数"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
+          <input class="size-input" id="size" type="number" min="2" max="12" step="1" value="3" inputmode="numeric" aria-label="自定义阶数">
+          <button class="stepper" id="larger" type="button" aria-label="增加阶数"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
+        </div>
+        <div class="presets" aria-label="常用阶数">
+          <button class="preset" type="button" data-size="2" aria-pressed="false">2 × 2</button>
+          <button class="preset" type="button" data-size="3" aria-pressed="true">3 × 3</button>
+          <button class="preset" type="button" data-size="4" aria-pressed="false">4 × 4</button>
+          <button class="preset" type="button" data-size="5" aria-pressed="false">5 × 5</button>
+        </div>
+      </section>
+      <section class="card turn-card" aria-labelledby="turn-heading">
+        <div class="card-heading"><h2 id="turn-heading">转动切层</h2></div>
+        <div class="turns" id="turns"></div>
+        <div class="turn-options">
+          <label class="layer-option" for="depth">层号<select id="depth" title="从对应面向内数的层号"></select></label>
+          <button class="reverse" id="reverse" type="button" aria-pressed="false">逆时针</button>
+        </div>
+        <p class="card-note">从对应面向内数。键盘可按字母转动，按住 Shift 反转方向。</p>
+      </section>
+      <section class="card" aria-labelledby="stats-heading">
+        <div class="card-heading"><h2 id="stats-heading">本局记录</h2></div>
+        <div class="stats">
+          <div class="stat"><span class="stat-label">用时</span><span class="stat-value" id="time">00:00</span></div>
+          <div class="stat"><span class="stat-label">步数</span><span class="stat-value" id="moves">0</span></div>
+        </div>
+        <button class="hint reset-button" id="reset" type="button" disabled>重置魔方</button>
+      </section>
+    </aside>
+  </div>
+</main>
+<dialog id="help-dialog" aria-labelledby="help-title">
+  <div class="dialog-head">
+    <h2 id="help-title">怎么玩</h2>
+    <form method="dialog"><button class="icon-button" aria-label="关闭" autofocus><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></form>
+  </div>
+  <ul>
+    <li>选择阶数，再点「一键打乱」。让六个面各自恢复成单一颜色，就算复原。</li>
+    <li>在色块上横拖或竖拖，转动它所在的一层。拖动空白、鼠标右键拖动，或按住 <kbd>Shift</kbd> 拖动，可以旋转视角。</li>
+    <li>也可以按右侧按钮或用键盘 <kbd>U</kbd> <kbd>D</kbd> <kbd>L</kbd> <kbd>R</kbd> <kbd>F</kbd> <kbd>B</kbd> 转层。层号从对应面向内数。按住 <kbd>Shift</kbd> 可反转方向。</li>
+    <li>第一次转层开始计时。撤销只回退你自己转过的步骤。</li>
+  </ul>
+</dialog>
+<script>
+"use strict";
+const MIN_SIZE = 2;
+const MAX_SIZE = 12;
+const FACE = {
+  U: { axis: 1, side: 1, name: "上", color: "#f2e8d8" },
+  D: { axis: 1, side: -1, name: "下", color: "#f8d96e" },
+  L: { axis: 0, side: -1, name: "左", color: "#6c9ef1" },
+  R: { axis: 0, side: 1, name: "右", color: "#56ceac" },
+  F: { axis: 2, side: 1, name: "前", color: "#f47c68" },
+  B: { axis: 2, side: -1, name: "后", color: "#f5a251" }
+};
+const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
+const SURFACES = Object.values(FACE).map(face => {
+  const normal = [0, 0, 0];
+  normal[face.axis] = face.side;
+  return { ...face, normal, tangents: [0, 1, 2].filter(axis => axis !== face.axis) };
+});
+const PLASTIC_RADIUS = .487;
+const STICKER_RADIUS = .418;
+const START_YAW = .64;
+const START_PITCH = .46;
+const CAMERA_DISTANCE = 4.9;
+const QUARTER = Math.PI / 2;
+
+function quarterTurn(vector, axis, sign) {
+  const a = (axis + 1) % 3;
+  const b = (axis + 2) % 3;
+  const result = [...vector];
+  result[a] = -sign * vector[b];
+  result[b] = sign * vector[a];
+  return result;
+}
+
+class Cube {
+  constructor(size) {
+    this.size = size;
+    this.edge = size - 1;
+    this.pieces = [];
+    for (let x = -this.edge; x <= this.edge; x += 2) {
+      for (let y = -this.edge; y <= this.edge; y += 2) {
+        for (let z = -this.edge; z <= this.edge; z += 2) {
+          const position = [x, y, z];
+          const stickers = SURFACES.filter(face => position[face.axis] === face.side * this.edge)
+            .map(face => ({ normal: face.normal, color: face.color }));
+          if (stickers.length) this.pieces.push({ position, stickers });
+        }
+      }
+    }
+  }
+
+  turn({ axis, layer, sign }) {
+    for (const piece of this.pieces) {
+      if (piece.position[axis] !== layer) continue;
+      piece.position = quarterTurn(piece.position, axis, sign);
+      for (const sticker of piece.stickers) {
+        sticker.normal = quarterTurn(sticker.normal, axis, sign);
+      }
+    }
+  }
+
+  isSolved() {
+    const colors = new Map();
+    for (const piece of this.pieces) {
+      for (const { normal, color } of piece.stickers) {
+        const key = normal.join(",");
+        if (colors.has(key) && colors.get(key) !== color) return false;
+        colors.set(key, color);
+      }
+    }
+    return true;
+  }
+
+  scramble() {
+    let moves;
+    do {
+      moves = [];
+      for (let index = 0; index < 14 + this.size * 4; index++) {
+        const previous = moves.at(-1);
+        const axis = previous ? (previous.axis + 1 + Math.floor(Math.random() * 2)) % 3 : Math.floor(Math.random() * 3);
+        const layer = Math.floor(Math.random() * this.size) * 2 - this.edge;
+        moves.push({ axis, layer, sign: Math.random() < .5 ? -1 : 1 });
+      }
+      for (const move of moves) this.turn(move);
+    } while (this.isSolved());
+    return moves;
+  }
+}
+
+const byId = id => document.getElementById(id);
+const canvas = byId("cube");
+const ctx = canvas.getContext("2d");
+const depth = byId("depth");
+const sizeInput = byId("size");
+const presets = [...document.querySelectorAll(".preset")];
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+const faceButtons = FACE_ORDER.map(key => {
+  const face = FACE[key];
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "face";
+  button.dataset.face = key;
+  button.style.setProperty("--face", face.color);
+  const letter = document.createElement("span");
+  letter.className = "face-key";
+  letter.textContent = key;
+  const name = document.createElement("span");
+  name.className = "face-name";
+  name.textContent = face.name;
+  button.append(letter, name);
+  byId("turns").append(button);
+  button.addEventListener("click", event => turnFace(key, event.shiftKey));
+  return button;
+});
+
+let cube = new Cube(3);
+let yaw = START_YAW;
+let pitch = START_PITCH;
+let frame = 0;
+let animation = null;
+let gesture = null;
+let width = 0;
+let height = 0;
+let pixelRatio = 1;
+let hitFaces = [];
+let busy = false;
+let session = "idle";
+let started = null;
+let elapsed = 0;
+let history = [];
+
+function requestDraw() {
+  if (!frame) frame = requestAnimationFrame(draw);
+}
+
+function quad(center, surface, radius) {
+  const [a, b] = surface.tangents;
+  return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => {
+    const point = [...center];
+    point[a] += radius * u;
+    point[b] += radius * v;
+    return point;
+  });
+}
+
+function roundedQuad(points, round) {
+  ctx.beginPath();
+  for (let index = 0; index < 4; index++) {
+    const previous = points[(index + 3) % 4];
+    const current = points[index];
+    const next = points[(index + 1) % 4];
+    const entry = current.map((value, axis) => value + (previous[axis] - value) * round);
+    const exit = current.map((value, axis) => value + (next[axis] - value) * round);
+    if (index === 0) ctx.moveTo(...entry);
+    else ctx.lineTo(...entry);
+    ctx.quadraticCurveTo(...current, ...exit);
+  }
+  ctx.closePath();
+}
+
+function draw(now) {
+  frame = 0;
+  if (!width || !height || !ctx) return;
+  const active = animation;
+  const progress = active ? Math.min(1, (now - active.start) / active.duration) : 0;
+  const angle = active ? active.sign * QUARTER * (progress * progress * (3 - 2 * progress)) : 0;
+  const ca = Math.cos(angle);
+  const sa = Math.sin(angle);
+  const cy = Math.cos(yaw);
+  const sy = Math.sin(yaw);
+  const cp = Math.cos(pitch);
+  const sp = Math.sin(pitch);
+  const scale = Math.min(width * .31, height * .246);
+  const centerY = height * .453;
+
+  function rotate(vector, moving) {
+    if (!moving) return vector;
+    const a = (active.axis + 1) % 3;
+    const b = (active.axis + 2) % 3;
+    const result = [...vector];
+    result[a] = vector[a] * ca - vector[b] * sa;
+    result[b] = vector[a] * sa + vector[b] * ca;
+    return result;
+  }
+
+  function camera([x, y, z]) {
+    const depth = sy * x + cy * z;
+    return [cy * x - sy * z, cp * y - sp * depth, sp * y + cp * depth];
+  }
+
+  function project([x, y, z]) {
+    const factor = scale * CAMERA_DISTANCE / (CAMERA_DISTANCE - z);
+    return [width / 2 + x * factor, centerY - y * factor];
+  }
+
+  ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  const shadowY = centerY + scale * 1.09;
+  const shadow = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+  shadow.addColorStop(0, "#080913c9");
+  shadow.addColorStop(.6, "#0a0b17a3");
+  shadow.addColorStop(1, "#0a0b1700");
+  ctx.save();
+  ctx.translate(width / 2, shadowY);
+  ctx.scale(scale * 1.55, scale * .34);
+  ctx.fillStyle = shadow;
+  ctx.fillRect(-1, -1, 2, 2);
+  ctx.restore();
+
+  const faces = [];
+  for (const piece of cube.pieces) {
+    const moving = active && piece.position[active.axis] === active.layer;
+    const center = piece.position.map(value => value / cube.size);
+    for (const surface of SURFACES) {
+      const sticker = piece.stickers.find(item => item.normal[surface.axis] === surface.side);
+      // Internal surfaces become visible along the rotating slice.
+      if (!sticker && !active) continue;
+      if (!sticker && active) {
+        const onCut = surface.axis === active.axis && (
+          moving || piece.position[active.axis] + surface.side * 2 === active.layer
+        );
+        if (!onCut) continue;
+      }
+      const faceCenter = center.map((value, axis) => value + surface.normal[axis] * PLASTIC_RADIUS * 2 / cube.size);
+      const cameraCenter = camera(rotate(faceCenter, moving));
+      const normal = camera(rotate(surface.normal, moving));
+      const toCamera = [-cameraCenter[0], -cameraCenter[1], CAMERA_DISTANCE - cameraCenter[2]];
+      if (normal.reduce((dot, value, axis) => dot + value * toCamera[axis], 0) <= 0) continue;
+      const points = radius => quad(faceCenter, surface, radius * 2 / cube.size)
+        .map(point => project(camera(rotate(point, moving))));
+      const stickerPoints = sticker ? points(STICKER_RADIUS) : null;
+      faces.push({
+        depth: cameraCenter[2], body: points(PLASTIC_RADIUS), sticker: stickerPoints,
+        color: sticker?.color, shade: Math.max(.01, .17 - normal[1] * .145 - normal[0] * .08),
+        piece, surface, center: project(cameraCenter),
+        directions: sticker && !active ? surface.tangents.map(axis => {
+          const tip = [...faceCenter];
+          tip[axis] += 1 / cube.size;
+          const projected = project(camera(tip));
+          const origin = project(cameraCenter);
+          return { axis, x: projected[0] - origin[0], y: projected[1] - origin[1] };
+        }) : []
+      });
+    }
+  }
+  faces.sort((a, b) => a.depth - b.depth);
+  for (const face of faces) {
+    roundedQuad(face.body, .075);
+    ctx.fillStyle = "#111219";
+    ctx.fill();
+    if (!face.sticker) continue;
+    roundedQuad(face.sticker, .105);
+    ctx.fillStyle = face.color;
+    ctx.fill();
+    ctx.fillStyle = "rgba(21,18,36," + face.shade + ")";
+    ctx.fill();
+    ctx.strokeStyle = "#fff2";
+    ctx.lineWidth = Math.max(.45, Math.min(1, 2.2 / cube.size));
+    ctx.stroke();
+  }
+  hitFaces = faces.filter(face => face.sticker);
+  if (active && progress >= 1) {
+    cube.turn(active);
+    animation = null;
+    requestDraw();
+    active.finish();
+  } else if (active) {
+    requestDraw();
+  }
+}
+
+function animate(move, duration = 155) {
+  if (reducedMotion.matches || !ctx) {
+    cube.turn(move);
+    requestDraw();
+    return Promise.resolve();
+  }
+  return new Promise(finish => {
+    animation = { ...move, duration, start: performance.now(), finish };
+    requestDraw();
+  });
+}
+
+function updateClock() {
+  const seconds = Math.floor((started === null ? elapsed : performance.now() - started) / 1000);
+  const minutes = String(Math.floor(seconds / 60)).padStart(2, "0");
+  byId("time").textContent = minutes + ":" + String(seconds % 60).padStart(2, "0");
+}
+
+function updateUI() {
+  const labels = { idle: "待打乱", shuffling: "打乱中", ready: "待开始", playing: "复原中", solved: "已复原" };
+  byId("status").dataset.state = session;
+  if (byId("status-text").textContent !== labels[session]) byId("status-text").textContent = labels[session];
+  byId("moves").textContent = history.length;
+  byId("undo").disabled = busy || !history.length;
+  byId("reset").disabled = busy || session === "idle";
+  byId("shuffle").disabled = busy;
+  byId("smaller").disabled = busy || cube.size === MIN_SIZE;
+  byId("larger").disabled = busy || cube.size === MAX_SIZE;
+  sizeInput.disabled = busy;
+  depth.disabled = busy;
+  for (const button of [...presets, ...faceButtons]) button.disabled = busy;
+  updateClock();
+}
+
+function resetPuzzle(size = cube.size) {
+  cube = new Cube(size);
+  session = "idle";
+  history = [];
+  started = null;
+  elapsed = 0;
+  sizeInput.value = size;
+  byId("dimension").textContent = [size, size, size].join(" × ");
+  for (const button of presets) button.setAttribute("aria-pressed", Number(button.dataset.size) === size);
+  depth.replaceChildren();
+  for (let value = 1; value <= size; value++) {
+    const option = new Option(value === 1 ? "1（外层）" : String(value), String(value));
+    depth.append(option);
+  }
+  updateUI();
+  requestDraw();
+}
+
+function selectSize(value) {
+  if (busy) return;
+  const size = Math.min(MAX_SIZE, Math.max(MIN_SIZE, Math.round(value)));
+  if (cube.size !== size) resetPuzzle(size);
+  else sizeInput.value = size;
+}
+
+function startClock() {
+  if (session === "solved") {
+    history = [];
+    elapsed = 0;
+  }
+  if (started === null) started = performance.now() - elapsed;
+  session = "playing";
+}
+
+function finishTurn() {
+  if (cube.isSolved()) {
+    if (started !== null) elapsed = performance.now() - started;
+    started = null;
+    session = "solved";
+  }
+  busy = false;
+  updateUI();
+}
+
+async function playTurn(move) {
+  if (busy) return;
+  startClock();
+  busy = true;
+  updateUI();
+  await animate(move);
+  history.push(move);
+  finishTurn();
+}
+
+function turnFace(key, shift) {
+  const { axis, side } = FACE[key];
+  const reverse = byId("reverse").getAttribute("aria-pressed") === "true";
+  playTurn({
+    axis,
+    layer: side * (cube.edge - 2 * (Number(depth.value) - 1)),
+    sign: reverse !== shift ? side : -side
+  });
+}
+
+byId("shuffle").addEventListener("click", async () => {
+  if (busy) return;
+  resetPuzzle();
+  busy = true;
+  session = "shuffling";
+  updateUI();
+  const moves = cube.scramble();
+  if (!reducedMotion.matches && ctx) {
+    const tail = moves.slice(-6);
+    for (const move of tail.slice().reverse()) cube.turn({ ...move, sign: -move.sign });
+    for (const move of tail) await animate(move, 83);
+  }
+  session = "ready";
+  busy = false;
+  updateUI();
+  requestDraw();
+});
+
+byId("undo").addEventListener("click", async () => {
+  if (busy || !history.length) return;
+  const move = history.pop();
+  if (started === null) started = performance.now() - elapsed;
+  session = "playing";
+  busy = true;
+  updateUI();
+  await animate({ ...move, sign: -move.sign });
+  finishTurn();
+});
+
+byId("reset").addEventListener("click", () => resetPuzzle());
+byId("view").addEventListener("click", () => {
+  yaw = START_YAW;
+  pitch = START_PITCH;
+  requestDraw();
+});
+byId("reverse").addEventListener("click", event => {
+  const button = event.currentTarget;
+  button.setAttribute("aria-pressed", button.getAttribute("aria-pressed") !== "true");
+});
+byId("smaller").addEventListener("click", () => selectSize(cube.size - 1));
+byId("larger").addEventListener("click", () => selectSize(cube.size + 1));
+for (const button of presets) button.addEventListener("click", () => selectSize(Number(button.dataset.size)));
+sizeInput.addEventListener("change", () => selectSize(Number.isFinite(sizeInput.valueAsNumber) ? sizeInput.valueAsNumber : cube.size));
+sizeInput.addEventListener("keydown", event => {
+  if (event.key === "Enter") sizeInput.blur();
+});
+const help = byId("help-dialog");
+byId("help").addEventListener("click", () => help.showModal());
+help.addEventListener("click", event => {
+  if (event.target !== help) return;
+  const rect = help.getBoundingClientRect();
+  if (event.clientX < rect.left || event.clientX > rect.right ||
+      event.clientY < rect.top || event.clientY > rect.bottom) help.close();
+});
+
+function localPoint(event) {
+  const rect = canvas.getBoundingClientRect();
+  return [event.clientX - rect.left, event.clientY - rect.top];
+}
+
+function containsPoint(points, x, y) {
+  let side = 0;
+  for (let index = 0; index < 4; index++) {
+    const [ax, ay] = points[index];
+    const [bx, by] = points[(index + 1) % 4];
+    const cross = (bx - ax) * (y - ay) - (by - ay) * (x - ax);
+    if (cross === 0) continue;
+    if (side && side !== Math.sign(cross)) return false;
+    side = Math.sign(cross);
+  }
+  return true;
+}
+
+function hitTest(x, y) {
+  if (busy) return null;
+  for (let index = hitFaces.length - 1; index >= 0; index--) {
+    const face = hitFaces[index];
+    if (face.directions.length && containsPoint(face.body, x, y)) return face;
+  }
+  return null;
+}
+
+function dragTurn(face, dx, dy) {
+  const projected = face.directions.map(direction => ({
+    axis: direction.axis,
+    dot: (dx * direction.x + dy * direction.y) / Math.hypot(direction.x, direction.y)
+  }));
+  const tangent = Math.abs(projected[0].dot) >= Math.abs(projected[1].dot) ? projected[0] : projected[1];
+  const axis = 3 - face.surface.axis - tangent.axis;
+  const sign = (tangent.axis === (face.surface.axis + 1) % 3 ? 1 : -1) *
+    face.surface.side * Math.sign(tangent.dot);
+  playTurn({ axis, layer: face.piece.position[axis], sign });
+}
+
+function orbit(dx, dy) {
+  yaw -= dx;
+  pitch = Math.max(-1.53, Math.min(1.53, pitch + dy));
+  requestDraw();
+}
+
+canvas.addEventListener("contextmenu", event => event.preventDefault());
+canvas.addEventListener("pointerdown", event => {
+  if (gesture || (event.button !== 0 && event.button !== 2)) return;
+  const [x, y] = localPoint(event);
+  const face = event.button === 2 || event.shiftKey ? null : hitTest(x, y);
+  gesture = { id: event.pointerId, x, y, face, turned: false };
+  canvas.dataset.drag = face ? "turn" : "view";
+  canvas.setPointerCapture(event.pointerId);
+});
+canvas.addEventListener("pointermove", event => {
+  const [x, y] = localPoint(event);
+  if (!gesture) {
+    canvas.dataset.hover = hitTest(x, y) ? "sticker" : "";
+    return;
+  }
+  if (gesture.id !== event.pointerId || gesture.turned) return;
+  const dx = x - gesture.x;
+  const dy = y - gesture.y;
+  if (gesture.face) {
+    if (Math.hypot(dx, dy) < 12) return;
+    gesture.turned = true;
+    dragTurn(gesture.face, dx, dy);
+    return;
+  }
+  orbit(dx * .009, dy * .009);
+  gesture.x = x;
+  gesture.y = y;
+});
+for (const eventName of ["pointerup", "pointercancel", "lostpointercapture"]) {
+  canvas.addEventListener(eventName, event => {
+    if (gesture?.id !== event.pointerId) return;
+    gesture = null;
+    canvas.dataset.drag = "";
+  });
+}
+canvas.addEventListener("keydown", event => {
+  const movement = { ArrowLeft: [-.15, 0], ArrowRight: [.15, 0], ArrowUp: [0, -.15], ArrowDown: [0, .15] }[event.key];
+  if (!movement) return;
+  event.preventDefault();
+  orbit(...movement);
+});
+document.addEventListener("keydown", event => {
+  if (event.repeat || event.altKey || event.ctrlKey || event.metaKey || help.open ||
+      event.target.matches("input, select, textarea, [contenteditable]")) return;
+  const key = event.key.toUpperCase();
+  if (Object.hasOwn(FACE, key)) {
+    event.preventDefault();
+    turnFace(key, event.shiftKey);
+  }
+});
+
+new ResizeObserver(entries => {
+  const { width: nextWidth, height: nextHeight } = entries[0].contentRect;
+  width = nextWidth;
+  height = nextHeight;
+  pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.round(width * pixelRatio);
+  canvas.height = Math.round(height * pixelRatio);
+  requestDraw();
+}).observe(canvas);
+
+resetPuzzle();
+setInterval(updateClock, 250);
+</script>
+</body>
+</html>
